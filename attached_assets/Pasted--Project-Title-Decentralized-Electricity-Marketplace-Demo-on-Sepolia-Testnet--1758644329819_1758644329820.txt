@@ -1,0 +1,78 @@
+## **Project Title**
+
+Decentralized Electricity Marketplace (Demo on Sepolia Testnet)
+
+---
+
+## **Goal**
+
+Build a decentralized platform where users can **buy and sell electricity (kWh)** using **SepoliaETH** as payment.
+
+- Users authenticate only via **MetaMask (non-custodial login)**.
+- Sellers post electricity offers (amount of kWh + rate per kWh).
+- Buyers purchase from sellers in real time with automatic balance updates.
+- Include historical transactions, balances, and a simple dashboard for clarity.
+- Development mode should give new users **free demo energy** to sell.
+
+---
+
+## **Flow of Program (Example)**
+
+1. **Login**
+    - User (e.g., **Ram**) logs in with **MetaMask**.
+    - Dashboard shows Ram’s **SepoliaETH balance** + **energy balance**.
+    - New users automatically get some demo energy for testing.
+2. **Sell Flow**
+    - Ram creates a sell order: e.g., **100 kWh @ 0.0001 SepoliaETH/kWh**.
+    - This is stored on-chain as an active offer.
+3. **Buy Flow**
+    - Another user (**Charan**) logs in with MetaMask.
+    - He opens the **Marketplace (Buy page)** where all active sellers are listed.
+    - Charan buys **3 kWh from Ram** → pays **0.0003 SepoliaETH**.
+    
+    Transaction results:
+    
+    - Ram’s **energy decreases** by 3 kWh, **SepoliaETH increases** by 0.0003.
+    - Charan’s **SepoliaETH decreases** by 0.0003, **energy increases** by 3 kWh.
+    - Data updates **in real time** on dashboard.
+4. **History & Analytics**
+    - Show past **buy/sell transactions** on dashboard (for both buyer & seller).
+    - Summaries like "Total Energy Bought/Sold", "Total Earnings".
+
+---
+
+## **Technologies to Use**
+
+- **Smart Contract (Blockchain Layer):**
+    - Solidity (ERC20-like custom token for **EnergyToken (kWh)**).
+    - Marketplace contract to handle listings, purchases, and transfers.
+    - Sepolia Testnet + Google Cloud / Alchemy / Infura RPC (free tier).
+- **Backend / Middleware:**
+    - **Node.js + Express** → API layer.
+    - **Ethers.js** (to connect backend with smart contract).
+    - MongoDB (optional) → store user profiles, transaction history, analytics (for faster frontend queries).
+    - WebSocket or Socket.io → real-time updates for balances and transactions.
+- **Frontend:**
+    - **React.js** (plain JS, not TS).
+    - **Web3Modal / Wagmi / RainbowKit** or directly with **Ethers.js** for MetaMask integration.
+    - **Pages**:
+        1. **Login Page** → Only MetaMask login.
+        2. **Dashboard** → Wallet balance (SepoliaETH), Energy balance, quick stats.
+        3. **Sell Page** → Form to list electricity for sale.
+        4. **Buy Page** → Marketplace showing available sellers, with Buy button.
+        5. **History Page** → Past transactions (bought/sold).
+
+---
+
+## **Smart Contract Breakdown**
+
+1. **EnergyToken.sol**
+    - ERC20-like token representing **energy (kWh)**.
+    - Mint initial tokens to new users in dev mode.
+2. **Marketplace.sol**
+    - Struct: `{ seller, amountKWh, ratePerKWh }`.
+    - Functions:
+        - `createListing(amount, rate)` → seller posts energy for sale.
+        - `buyEnergy(listingId, amount)` → buyer pays ETH, receives kWh.
+        - Auto transfer balances between buyer & seller.
+        - Emit events (`EnergySold`, `EnergyBought`) for frontend real-time updates.
