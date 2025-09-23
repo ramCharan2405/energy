@@ -4,8 +4,8 @@ import { User } from "@shared/schema";
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
-  login: (walletAddress: string, signature: string, message: string) => Promise<void>;
-  logout: () => void;
+  login: (message: string, signature: string) => Promise<void>;
+  logout: () => Promise<void>;
   isLoading: boolean;
 }
 
@@ -28,36 +28,50 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check if user is already logged in
-    const savedUser = localStorage.getItem("user");
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
-    }
-    setIsLoading(false);
+    // Check if user is already authenticated via session
+    checkAuthStatus();
   }, []);
 
-  const login = async (walletAddress: string, signature: string, message: string) => {
+  const checkAuthStatus = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch("/api/auth/connect", {
+      const response = await fetch("/api/auth/me", {
+        credentials: 'include'
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setUser(data.user);
+      }
+    } catch (error) {
+      console.log("No active session");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const login = async (message: string, signature: string) => {
+    try {
+      setIsLoading(true);
+      const response = await fetch("/api/auth/verify", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
+        credentials: 'include',
         body: JSON.stringify({
-          walletAddress,
-          signature,
           message,
+          signature,
         }),
       });
 
       if (!response.ok) {
-        throw new Error("Authentication failed");
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Authentication failed");
       }
 
       const data = await response.json();
       setUser(data.user);
-      localStorage.setItem("user", JSON.stringify(data.user));
     } catch (error) {
       console.error("Login error:", error);
       throw error;
@@ -66,9 +80,16 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: 'include'
+      });
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
     setUser(null);
-    localStorage.removeItem("user");
   };
 
   const value = {

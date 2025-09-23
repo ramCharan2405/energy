@@ -1,12 +1,128 @@
-import type { Express } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
+import { SiweMessage } from "siwe";
+import { v4 as uuidv4 } from "uuid";
 import { storage } from "./storage";
 import { insertUserSchema, insertEnergyListingSchema, insertTransactionSchema } from "@shared/schema";
 import { blockchainService } from "./services/blockchain";
 import { z } from "zod";
 
+// Session type augmentation
+declare module 'express-session' {
+  interface SessionData {
+    nonce?: string;
+    userId?: string;
+    walletAddress?: string;
+  }
+}
+
+// Authentication middleware
+const requireAuth = (req: Request, res: Response, next: NextFunction) => {
+  if (!req.session.userId) {
+    return res.status(401).json({ message: "Authentication required" });
+  }
+  next();
+};
+
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Auth routes
+  // SIWE Auth routes
+  app.get("/api/auth/nonce", (req, res) => {
+    const nonce = uuidv4();
+    req.session.nonce = nonce;
+    res.json({ nonce });
+  });
+
+  app.post("/api/auth/verify", async (req, res) => {
+    try {
+      const { message, signature } = req.body;
+      
+      if (!message || !signature) {
+        return res.status(400).json({ message: "Missing message or signature" });
+      }
+
+      const siweMessage = new SiweMessage(message);
+      const { data: fields } = await siweMessage.verify({
+        signature,
+        nonce: req.session.nonce
+      });
+
+      if (fields.nonce !== req.session.nonce) {
+        return res.status(401).json({ message: "Invalid nonce" });
+      }
+
+      const walletAddress = fields.address;
+      
+      // Check if user exists
+      let user = await storage.getUserByWalletAddress(walletAddress);
+      
+      if (!user) {
+        // Create new user and mint demo energy
+        user = await storage.createUser({
+          walletAddress,
+          energyBalance: "1000", // Demo energy for new users
+          ethBalance: "0",
+          totalEarnings: "0",
+          isNewUser: true
+        });
+
+        // Mint demo energy tokens on blockchain
+        try {
+          await blockchainService.mintDemoEnergy(walletAddress, "1000");
+        } catch (error) {
+          console.error("Failed to mint demo energy:", error);
+        }
+      } else {
+        // Update ETH balance from blockchain
+        try {
+          const ethBalance = await blockchainService.getEthBalance(walletAddress);
+          const energyBalance = await blockchainService.getEnergyBalance(walletAddress);
+          
+          await storage.updateUser(user.id, { 
+            ethBalance: ethBalance.toString(),
+            energyBalance: energyBalance.toString()
+          });
+          
+          user = await storage.getUser(user.id);
+        } catch (error) {
+          console.error("Failed to update balances from blockchain:", error);
+        }
+      }
+
+      // Set session
+      req.session.userId = user!.id;
+      req.session.walletAddress = walletAddress;
+      delete req.session.nonce; // Clear nonce after use
+
+      res.json({ user });
+    } catch (error) {
+      console.error("SIWE verification error:", error);
+      res.status(401).json({ message: "Authentication failed" });
+    }
+  });
+
+  app.post("/api/auth/logout", (req, res) => {
+    req.session.destroy((err) => {
+      if (err) {
+        return res.status(500).json({ message: "Logout failed" });
+      }
+      res.json({ message: "Logged out successfully" });
+    });
+  });
+
+  app.get("/api/auth/me", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      res.json({ user });
+    } catch (error) {
+      console.error("Error fetching current user:", error);
+      res.status(500).json({ message: "Failed to fetch user" });
+    }
+  });
+
+  // Legacy auth route (deprecated)
   app.post("/api/auth/connect", async (req, res) => {
     try {
       const { walletAddress, signature, message } = req.body;
@@ -61,7 +177,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // User routes
-  app.get("/api/users/:walletAddress", async (req, res) => {
+  app.get("/api/users/:walletAddress", requireAuth, async (req, res) => {
     try {
       const { walletAddress } = req.params;
       const user = await storage.getUserByWalletAddress(walletAddress);
@@ -123,7 +239,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/listings", async (req, res) => {
+  app.post("/api/listings", requireAuth, async (req, res) => {
     try {
       const validatedData = insertEnergyListingSchema.parse(req.body);
       
@@ -166,7 +282,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/listings/:id", async (req, res) => {
+  app.delete("/api/listings/:id", requireAuth, async (req, res) => {
     try {
       const { id } = req.params;
       const { userId } = req.body;
@@ -195,7 +311,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Transaction routes
-  app.post("/api/transactions/buy", async (req, res) => {
+  app.post("/api/transactions/buy", requireAuth, async (req, res) => {
     try {
       const { buyerId, listingId, amount } = req.body;
 
@@ -282,7 +398,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/transactions/user/:userId", async (req, res) => {
+  app.get("/api/transactions/user/:userId", requireAuth, async (req, res) => {
     try {
       const { userId } = req.params;
       const transactions = await storage.getUserTransactions(userId);

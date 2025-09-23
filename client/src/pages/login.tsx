@@ -21,12 +21,24 @@ export default function Login() {
         await connect();
       }
 
-      // Sign authentication message
-      const message = `Welcome to EnergyMarket!\n\nSign this message to authenticate with your wallet.\n\nTimestamp: ${Date.now()}`;
-      const signature = await signMessage(message);
+      // Get nonce from server
+      const nonceResponse = await fetch('/api/auth/nonce', { 
+        credentials: 'include' 
+      });
+      const { nonce } = await nonceResponse.json();
+
+      // Create SIWE message
+      const domain = window.location.host;
+      const origin = window.location.origin;
+      const statement = 'Sign in with Ethereum to EnergyMarket';
+      
+      const siweMessage = `${domain} wants you to sign in with your Ethereum account:\n${account}\n\n${statement}\n\nURI: ${origin}\nVersion: 1\nChain ID: 11155111\nNonce: ${nonce}\nIssued At: ${new Date().toISOString()}`;
+
+      // Sign the SIWE message
+      const signature = await signMessage(siweMessage);
 
       // Authenticate with backend
-      await login(account!, signature, message);
+      await login(siweMessage, signature);
 
       toast({
         title: "Connected Successfully",
