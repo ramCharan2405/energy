@@ -1,5 +1,7 @@
-import { type User, type InsertUser, type EnergyListing, type InsertEnergyListing, type Transaction, type InsertTransaction } from "@shared/schema";
+import { type User, type InsertUser, type EnergyListing, type InsertEnergyListing, type Transaction, type InsertTransaction, users, energyListings, transactions } from "@shared/schema";
 import { randomUUID } from "crypto";
+import { db } from "./db";
+import { eq, and, or } from "drizzle-orm";
 
 export interface IStorage {
   // User operations
@@ -153,4 +155,78 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+export class DatabaseStorage implements IStorage {
+  async getUser(id: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user || undefined;
+  }
+
+  async getUserByWalletAddress(walletAddress: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.walletAddress, walletAddress));
+    return user || undefined;
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const [user] = await db.insert(users).values(insertUser).returning();
+    return user;
+  }
+
+  async updateUser(id: string, updates: Partial<User>): Promise<User | undefined> {
+    const [user] = await db.update(users).set(updates).where(eq(users.id, id)).returning();
+    return user || undefined;
+  }
+
+  async getEnergyListing(id: string): Promise<EnergyListing | undefined> {
+    const [listing] = await db.select().from(energyListings).where(eq(energyListings.id, id));
+    return listing || undefined;
+  }
+
+  async getActiveEnergyListings(): Promise<EnergyListing[]> {
+    return await db.select().from(energyListings).where(eq(energyListings.isActive, true));
+  }
+
+  async getUserEnergyListings(sellerId: string): Promise<EnergyListing[]> {
+    return await db.select().from(energyListings).where(eq(energyListings.sellerId, sellerId));
+  }
+
+  async createEnergyListing(insertListing: InsertEnergyListing): Promise<EnergyListing> {
+    const [listing] = await db.insert(energyListings).values(insertListing).returning();
+    return listing;
+  }
+
+  async updateEnergyListing(id: string, updates: Partial<EnergyListing>): Promise<EnergyListing | undefined> {
+    const [listing] = await db.update(energyListings).set(updates).where(eq(energyListings.id, id)).returning();
+    return listing || undefined;
+  }
+
+  async deactivateEnergyListing(id: string): Promise<boolean> {
+    const result = await db.update(energyListings).set({ isActive: false }).where(eq(energyListings.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async getTransaction(id: string): Promise<Transaction | undefined> {
+    const [transaction] = await db.select().from(transactions).where(eq(transactions.id, id));
+    return transaction || undefined;
+  }
+
+  async getUserTransactions(userId: string): Promise<Transaction[]> {
+    return await db.select().from(transactions).where(
+      or(
+        eq(transactions.buyerId, userId),
+        eq(transactions.sellerId, userId)
+      )
+    );
+  }
+
+  async createTransaction(insertTransaction: InsertTransaction): Promise<Transaction> {
+    const [transaction] = await db.insert(transactions).values(insertTransaction).returning();
+    return transaction;
+  }
+
+  async updateTransaction(id: string, updates: Partial<Transaction>): Promise<Transaction | undefined> {
+    const [transaction] = await db.update(transactions).set(updates).where(eq(transactions.id, id)).returning();
+    return transaction || undefined;
+  }
+}
+
+export const storage = new DatabaseStorage();
