@@ -1,4 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { web3Utils } from "@/utils/web3Utils";
+import { CONTRACT_ADDRESSES } from "@/utils/contractConfig";
 
 interface Web3ContextType {
   account: string | null;
@@ -8,6 +10,10 @@ interface Web3ContextType {
   signMessage: (message: string) => Promise<string>;
   isLoading: boolean;
   error: string | null;
+  ethBalance: string | null;
+  energyBalance: string | null;
+  refreshBalances: () => Promise<void>;
+  giveInitialTokens: () => Promise<void>;
 }
 
 const Web3Context = createContext<Web3ContextType | null>(null);
@@ -34,6 +40,8 @@ export const Web3Provider = ({ children }: Web3ProviderProps) => {
   const [account, setAccount] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ethBalance, setEthBalance] = useState<string | null>(null);
+  const [energyBalance, setEnergyBalance] = useState<string | null>(null);
 
   useEffect(() => {
     // Check if already connected
@@ -63,6 +71,38 @@ export const Web3Provider = ({ children }: Web3ProviderProps) => {
     };
   }, []);
 
+  const refreshBalances = async () => {
+    if (!account || !CONTRACT_ADDRESSES.ENERGY_TOKEN) return;
+    
+    try {
+      await web3Utils.initializeContracts();
+      const [ethBal, energyBal] = await Promise.all([
+        web3Utils.getEthBalance(account),
+        web3Utils.getEnergyBalance(account)
+      ]);
+      setEthBalance(ethBal);
+      setEnergyBalance(energyBal);
+    } catch (error) {
+      console.error("Error fetching balances:", error);
+    }
+  };
+
+  const giveInitialTokens = async () => {
+    if (!account || !CONTRACT_ADDRESSES.ENERGY_TOKEN) return;
+    
+    try {
+      await web3Utils.initializeContracts();
+      const txHash = await web3Utils.mintDemoEnergy(account);
+      console.log("Demo energy minted:", txHash);
+      // Refresh balances after minting
+      await refreshBalances();
+      return txHash;
+    } catch (error) {
+      console.error("Error minting demo energy:", error);
+      throw error;
+    }
+  };
+
   const checkConnection = async () => {
     try {
       if (!window.ethereum) {
@@ -75,6 +115,15 @@ export const Web3Provider = ({ children }: Web3ProviderProps) => {
 
       if (accounts.length > 0) {
         setAccount(accounts[0]);
+        // Initialize contracts and fetch balances if account exists
+        if (CONTRACT_ADDRESSES.ENERGY_TOKEN) {
+          try {
+            await web3Utils.initializeContracts();
+            await refreshBalances();
+          } catch (error) {
+            console.log("Could not fetch initial balances:", error);
+          }
+        }
       }
     } catch (error) {
       console.error("Error checking connection:", error);
@@ -166,6 +215,10 @@ export const Web3Provider = ({ children }: Web3ProviderProps) => {
     signMessage,
     isLoading,
     error,
+    ethBalance,
+    energyBalance,
+    refreshBalances,
+    giveInitialTokens,
   };
 
   return (
