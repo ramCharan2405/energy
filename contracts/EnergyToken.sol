@@ -10,7 +10,10 @@ contract EnergyToken is ERC20, Ownable {
     event EnergyMinted(address indexed to, uint256 amount);
     event EnergyBurned(address indexed from, uint256 amount);
     
-    constructor() ERC20("EnergyToken", "kWh") Ownable(msg.sender) {}
+    constructor() ERC20("EnergyToken", "ENGY") Ownable(msg.sender) {
+        // Mint initial supply of 1,000,000 ENGY to deployer
+        _mint(msg.sender, 1000000 * 10**_decimals);
+    }
     
     function decimals() public view virtual override returns (uint8) {
         return _decimals;
