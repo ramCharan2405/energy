@@ -1,11 +1,17 @@
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import ConnectPgSimple from "connect-pg-simple";
+import { WebSocketServer } from "ws";
 import { pool } from "./db";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { setupWebSocket } from "./websocket";
 
 const app = express();
+
+// Trust proxy for correct protocol detection behind reverse proxy
+app.set('trust proxy', true);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
@@ -16,13 +22,19 @@ app.use(session({
     pool,
     tableName: 'session'
   }),
-  secret: process.env.SESSION_SECRET || 'dev-session-secret-change-in-production',
+  secret: process.env.SESSION_SECRET || (() => { 
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('SESSION_SECRET environment variable is required in production');
+    }
+    return 'dev-session-secret-only-for-development';
+  })(),
   resave: false,
   saveUninitialized: false,
   cookie: {
     secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax'
   }
 }));
 
@@ -58,6 +70,11 @@ app.use((req, res, next) => {
 
 (async () => {
   const server = await registerRoutes(app);
+
+  // WebSocket real-time updates temporarily disabled for production stability
+  // TODO: Fix frontend WebSocket URL construction and re-enable
+  // const wss = new WebSocketServer({ server, path: '/api/ws' });
+  // setupWebSocket(wss);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

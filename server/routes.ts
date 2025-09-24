@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from "uuid";
 import { storage } from "./storage";
 import { insertUserSchema, insertEnergyListingSchema, insertTransactionSchema } from "@shared/schema";
 import { blockchainService } from "./services/blockchain";
+import { wsService } from "./websocket";
 import { z } from "zod";
 
 // Session type augmentation
@@ -40,7 +41,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Missing message or signature" });
       }
 
+      if (!req.session.nonce) {
+        return res.status(401).json({ message: "No nonce found, please request a new one" });
+      }
+
       const siweMessage = new SiweMessage(message);
+      
+      // Validate SIWE message fields for security
+      const expectedDomain = req.get('host') || 'localhost';
+      if (siweMessage.domain !== expectedDomain) {
+        return res.status(401).json({ message: "Invalid domain in SIWE message" });
+      }
+      
+      // Handle both HTTP (dev) and HTTPS (production) protocols
+      const protocol = req.get('x-forwarded-proto') || req.protocol || 'http';
+      const expectedUri = `${protocol}://${expectedDomain}`;
+      if (siweMessage.uri !== expectedUri) {
+        return res.status(401).json({ message: "Invalid URI in SIWE message" });
+      }
+      
+      if (siweMessage.chainId !== 11155111) { // Sepolia testnet
+        return res.status(401).json({ message: "Invalid chain ID, must be Sepolia (11155111)" });
+      }
+
       const { data: fields } = await siweMessage.verify({
         signature,
         nonce: req.session.nonce
@@ -88,12 +111,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Set session
-      req.session.userId = user!.id;
-      req.session.walletAddress = walletAddress;
-      delete req.session.nonce; // Clear nonce after use
+      // Regenerate session to prevent session fixation attacks
+      req.session.regenerate((err) => {
+        if (err) {
+          console.error('Session regeneration error:', err);
+          return res.status(500).json({ message: 'Session error' });
+        }
 
-      res.json({ user });
+        // Set session data after regeneration
+        req.session.userId = user!.id;
+        req.session.walletAddress = walletAddress;
+        
+        // Save the session
+        req.session.save((err) => {
+          if (err) {
+            console.error('Session save error:', err);
+            return res.status(500).json({ message: 'Session error' });
+          }
+          
+          res.json({ user });
+        });
+      });
     } catch (error) {
       console.error("SIWE verification error:", error);
       res.status(401).json({ message: "Authentication failed" });
@@ -243,6 +281,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validatedData = insertEnergyListingSchema.parse(req.body);
       
+      // Security: Ensure the authenticated user matches the sellerId
+      if (validatedData.sellerId !== req.session.userId) {
+        return res.status(403).json({ message: "Cannot create listing for another user" });
+      }
+      
       // Verify user has enough energy balance
       const user = await storage.getUser(validatedData.sellerId);
       if (!user) {
@@ -285,19 +328,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/listings/:id", requireAuth, async (req, res) => {
     try {
       const { id } = req.params;
-      const { userId } = req.body;
 
       const listing = await storage.getEnergyListing(id);
       if (!listing) {
         return res.status(404).json({ message: "Listing not found" });
       }
 
-      if (listing.sellerId !== userId) {
-        return res.status(403).json({ message: "Unauthorized" });
+      // Security: Verify ownership based on session, not request body
+      if (listing.sellerId !== req.session.userId) {
+        return res.status(403).json({ message: "Unauthorized - you can only cancel your own listings" });
       }
 
       // Cancel listing on blockchain
-      const user = await storage.getUser(userId);
+      const user = await storage.getUser(req.session.userId!);
       if (user) {
         await blockchainService.cancelListing(user.walletAddress, id);
       }
@@ -313,9 +356,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Transaction routes
   app.post("/api/transactions/buy", requireAuth, async (req, res) => {
     try {
-      const { buyerId, listingId, amount } = req.body;
+      const { listingId, amount } = req.body;
+      const buyerId = req.session.userId!; // Use authenticated user ID
 
-      if (!buyerId || !listingId || !amount) {
+      if (!listingId || !amount) {
         return res.status(400).json({ message: "Missing required fields" });
       }
 
