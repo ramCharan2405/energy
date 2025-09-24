@@ -1,29 +1,11 @@
-import { keccak256 } from "crypto-js";
 import { ethers } from "ethers";
 
-// Proper EIP-55 checksum implementation
+// Proper EIP-55 checksum implementation using ethers
 export function toChecksumAddress(address: string): string {
   if (!address) return address;
 
   try {
-    // Remove 0x prefix and convert to lowercase
-    const cleanAddress = address.toLowerCase().replace(/^0x/, "");
-
-    // Calculate keccak256 hash of the lowercase address
-    const hash = keccak256(cleanAddress).toString();
-
-    // Apply EIP-55 checksum rules
-    let checksumAddress = "0x";
-    for (let i = 0; i < cleanAddress.length; i++) {
-      if (parseInt(hash[i], 16) >= 8) {
-        checksumAddress += cleanAddress[i].toUpperCase();
-      } else {
-        checksumAddress += cleanAddress[i];
-      }
-    }
-
-    console.log("Proper EIP-55 checksum:", address, "->", checksumAddress);
-    return checksumAddress;
+    return ethers.getAddress(address);
   } catch (error) {
     console.error("Error creating proper checksum:", error);
     return address.toLowerCase(); // Fallback to lowercase
