@@ -1,4 +1,10 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from "react";
 import { User } from "@shared/schema";
 
 interface AuthContextType {
@@ -6,6 +12,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   login: (message: string, signature: string) => Promise<void>;
   logout: () => Promise<void>;
+  refreshUser: () => Promise<void>;
   isLoading: boolean;
 }
 
@@ -36,9 +43,9 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     try {
       setIsLoading(true);
       const response = await fetch("/api/auth/me", {
-        credentials: 'include'
+        credentials: "include",
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         setUser(data.user);
@@ -58,7 +65,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         headers: {
           "Content-Type": "application/json",
         },
-        credentials: 'include',
+        credentials: "include",
         body: JSON.stringify({
           message,
           signature,
@@ -84,7 +91,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     try {
       await fetch("/api/auth/logout", {
         method: "POST",
-        credentials: 'include'
+        credentials: "include",
       });
     } catch (error) {
       console.error("Logout error:", error);
@@ -92,17 +99,30 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     setUser(null);
   };
 
+  const refreshUser = async () => {
+    try {
+      const response = await fetch("/api/auth/me", {
+        credentials: "include",
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setUser(data.user);
+        console.log("✅ User data refreshed:", data.user);
+      }
+    } catch (error) {
+      console.error("Error refreshing user data:", error);
+    }
+  };
+
   const value = {
     user,
     isAuthenticated: !!user,
     login,
     logout,
+    refreshUser,
     isLoading,
   };
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

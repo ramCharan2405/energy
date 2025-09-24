@@ -14,7 +14,11 @@ import History from "@/pages/history";
 import Navbar from "./components/Navbar";
 import { useAuth } from "./contexts/AuthContext";
 
-function ProtectedRoute({ component: Component }: { component: () => JSX.Element }) {
+function ProtectedRoute({
+  component: Component,
+}: {
+  component: () => JSX.Element;
+}) {
   const { isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) {
@@ -40,11 +44,26 @@ function ProtectedRoute({ component: Component }: { component: () => JSX.Element
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={() => <ProtectedRoute component={Dashboard} />} />
-      <Route path="/dashboard" component={() => <ProtectedRoute component={Dashboard} />} />
-      <Route path="/sell" component={() => <ProtectedRoute component={SellEnergy} />} />
-      <Route path="/buy" component={() => <ProtectedRoute component={BuyEnergy} />} />
-      <Route path="/history" component={() => <ProtectedRoute component={History} />} />
+      <Route
+        path="/"
+        component={() => <ProtectedRoute component={Dashboard} />}
+      />
+      <Route
+        path="/dashboard"
+        component={() => <ProtectedRoute component={Dashboard} />}
+      />
+      <Route
+        path="/sell"
+        component={() => <ProtectedRoute component={SellEnergy} />}
+      />
+      <Route
+        path="/buy"
+        component={() => <ProtectedRoute component={BuyEnergy} />}
+      />
+      <Route
+        path="/history"
+        component={() => <ProtectedRoute component={History} />}
+      />
       <Route path="/login" component={Login} />
       <Route component={NotFound} />
     </Switch>

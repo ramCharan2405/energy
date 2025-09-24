@@ -1,3 +1,13 @@
+import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Load .env from project root
+dotenv.config({ path: path.join(__dirname, "..", ".env") });
+
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import ConnectPgSimple from "connect-pg-simple";
@@ -10,33 +20,39 @@ import { setupWebSocket } from "./websocket";
 const app = express();
 
 // Trust proxy for correct protocol detection behind reverse proxy
-app.set('trust proxy', true);
+app.set("trust proxy", true);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
 // Session configuration
 const PgSession = ConnectPgSimple(session);
-app.use(session({
-  store: new PgSession({
-    pool,
-    tableName: 'session'
-  }),
-  secret: process.env.SESSION_SECRET || (() => { 
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error('SESSION_SECRET environment variable is required in production');
-    }
-    return 'dev-session-secret-only-for-development';
-  })(),
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    secure: process.env.NODE_ENV === 'production',
-    httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax'
-  }
-}));
+app.use(
+  session({
+    store: new PgSession({
+      pool,
+      tableName: "session",
+    }),
+    secret:
+      process.env.SESSION_SECRET ||
+      (() => {
+        if (process.env.NODE_ENV === "production") {
+          throw new Error(
+            "SESSION_SECRET environment variable is required in production"
+          );
+        }
+        return "dev-session-secret-only-for-development";
+      })(),
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: process.env.NODE_ENV === "production",
+      httpOnly: true,
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+    },
+  })
+);
 
 app.use((req, res, next) => {
   const start = Date.now();
@@ -77,11 +93,16 @@ app.use((req, res, next) => {
   // setupWebSocket(wss);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+    // Check if response was already sent
+    if (res.headersSent) {
+      return _next(err);
+    }
+
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
+    console.error("Express error handler:", err);
     res.status(status).json({ message });
-    throw err;
   });
 
   // importantly only setup vite in development and after
@@ -97,12 +118,8 @@ app.use((req, res, next) => {
   // Other ports are firewalled. Default to 5000 if not specified.
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
-  const port = parseInt(process.env.PORT || '5000', 10);
-  server.listen({
-    port,
-    host: "0.0.0.0",
-    reusePort: true,
-  }, () => {
-    log(`serving on port ${port}`);
+  const port = parseInt(process.env.PORT || "5001", 10);
+  server.listen(port, "localhost", () => {
+    log(`serving on http://localhost:${port}`);
   });
 })();

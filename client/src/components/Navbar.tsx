@@ -33,9 +33,11 @@ export default function Navbar() {
           <div className="flex items-center">
             <Link href="/dashboard" className="flex-shrink-0 flex items-center">
               <Bolt className="h-8 w-8 text-accent mr-2" />
-              <span className="text-xl font-bold text-foreground">EnergyMarket</span>
+              <span className="text-xl font-bold text-foreground">
+                EnergyMarket
+              </span>
             </Link>
-            
+
             <div className="hidden md:ml-6 md:flex md:space-x-8">
               {navItems.map((item) => (
                 <Link
@@ -47,20 +49,22 @@ export default function Navbar() {
                       ? "text-primary border-b-2 border-primary"
                       : "text-muted-foreground hover:text-foreground"
                   )}
-                  data-testid={`link-${item.label.toLowerCase().replace(' ', '-')}`}
+                  data-testid={`link-${item.label
+                    .toLowerCase()
+                    .replace(" ", "-")}`}
                 >
                   {item.label}
                 </Link>
               ))}
             </div>
           </div>
-          
+
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-2 text-sm">
               <div className="w-2 h-2 bg-secondary rounded-full"></div>
               <span className="text-muted-foreground">Sepolia</span>
             </div>
-            
+
             <Button
               data-testid="button-wallet-address"
               onClick={handleDisconnect}
