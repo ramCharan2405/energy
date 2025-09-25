@@ -198,14 +198,27 @@ export async function buyEnergyOnBlockchain(
 
     // Check if user has enough ETH
     const balance = await provider.getBalance(userAddress);
-    const gasEstimate = ethers.parseEther("0.001"); // Rough gas estimate
+    const gasEstimate = ethers.parseEther("0.01"); // More realistic gas estimate
+
+    console.log("💰 Balance Check:", {
+      userAddress,
+      currentBalance: ethers.formatEther(balance),
+      requiredAmount: totalCostEth,
+      gasEstimate: ethers.formatEther(gasEstimate),
+      totalRequired: ethers.formatEther(valueWei + gasEstimate),
+    });
 
     if (balance < valueWei + gasEstimate) {
       throw new Error(
         `❌ Insufficient ETH balance!\n\n` +
           `• You have: ${ethers.formatEther(balance)} ETH\n` +
-          `• You need: ${totalCostEth} ETH + gas fees (~0.001 ETH)\n\n` +
-          `💡 Solution: Add more Sepolia ETH to your wallet from a faucet.`
+          `• You need: ${totalCostEth} ETH + gas fees (~0.01 ETH)\n` +
+          `• Total required: ${ethers.formatEther(
+            valueWei + gasEstimate
+          )} ETH\n\n` +
+          `💡 Solution: Get Sepolia ETH from a faucet:\n` +
+          `• Alchemy Sepolia Faucet: https://sepoliafaucet.com/\n` +
+          `• Chainlink Sepolia Faucet: https://faucets.chain.link/sepolia`
       );
     }
 

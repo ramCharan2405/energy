@@ -528,6 +528,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Debug route for blockchain status
+  app.get("/api/debug/blockchain", async (req, res) => {
+    try {
+      const status = {
+        environment: {
+          ENERGY_TOKEN_ADDRESS: process.env.ENERGY_TOKEN_ADDRESS,
+          MARKETPLACE_ADDRESS: process.env.MARKETPLACE_ADDRESS,
+          ALCHEMY_API_KEY: process.env.ALCHEMY_API_KEY
+            ? "***SET***"
+            : "NOT_SET",
+          ADMIN_PRIVATE_KEY: process.env.ADMIN_PRIVATE_KEY
+            ? "***SET***"
+            : "NOT_SET",
+          RPC_URL: process.env.ALCHEMY_API_KEY
+            ? `https://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`
+            : "https://eth-sepolia.g.alchemy.com/v2/demo",
+        },
+        blockchain: {},
+      };
+
+      // Test blockchain connection
+      try {
+        const adminBalance = await blockchainService.getEthBalance(
+          "0x7d63fb667bed96d864e8a259d4cf3f0c2f5a8259" // Test address
+        );
+        status.blockchain = {
+          connected: true,
+          testBalance: adminBalance,
+        };
+      } catch (error: any) {
+        status.blockchain = {
+          connected: false,
+          error: error?.message || "Unknown error",
+        };
+      }
+
+      res.json(status);
+    } catch (error: any) {
+      res.status(500).json({ error: error?.message || "Unknown error" });
+    }
+  });
+
   // Transaction routes
   app.post("/api/transactions/buy", requireAuth, async (req, res) => {
     try {
