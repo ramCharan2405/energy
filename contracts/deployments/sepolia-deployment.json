@@ -1,0 +1,10 @@
+{
+  "network": "sepolia",
+  "deployer": "0x7d63Fb667BEd96D864e8a259d4CF3F0C2F5A8259",
+  "contracts": {
+    "EnergyCredit": "0x9faEA50ed06Ca785221Eb153A2683663f7AF6579",
+    "EnergyMarketplace": "0xFE78F2DD9c145A5C7fa81BE7c77Ac1Bce154FaCA"
+  },
+  "timestamp": "2025-10-07T14:55:23.277Z",
+  "initialSupply": 1000000
+}
