@@ -32,3 +32,4 @@ build/
 *.md
 !README.md
 !QUICKSTART.md
+!DEVELOPMENT_STATUS.md

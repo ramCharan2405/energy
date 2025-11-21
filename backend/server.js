@@ -27,7 +27,8 @@ connectDB();
 // Initialize blockchain service
 blockchainService.initialize().catch((err) => {
     logger.error('Failed to initialize blockchain service:', err);
-    process.exit(1);
+    logger.warn('⚠️  Server will continue running but blockchain features will be unavailable');
+    logger.warn('⚠️  This is acceptable for development/testing without network access');
 });
 
 // Body parser middleware

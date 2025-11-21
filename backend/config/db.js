@@ -39,7 +39,11 @@ const connectDB = async () => {
         return conn;
     } catch (error) {
         logger.error('Error connecting to MongoDB:', error.message);
-        process.exit(1);
+        logger.warn('⚠️  Server will continue running but database features will be unavailable');
+        logger.warn('⚠️  This is acceptable for development/testing without MongoDB');
+        logger.warn('⚠️  Install MongoDB from: https://www.mongodb.com/try/download/community');
+        // Don't exit - allow server to run without MongoDB for testing
+        return null;
     }
 };
 
