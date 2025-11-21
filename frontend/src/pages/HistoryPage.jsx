@@ -81,7 +81,9 @@ const HistoryPage = () => {
     if (searchQuery) {
       filtered = filtered.filter(
         (tx) =>
-          tx.transactionHash?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          tx.transactionHash
+            ?.toLowerCase()
+            .includes(searchQuery.toLowerCase()) ||
           tx.listing?.location
             ?.toLowerCase()
             .includes(searchQuery.toLowerCase())
