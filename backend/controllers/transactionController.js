@@ -1,9 +1,32 @@
+const mongoose = require('mongoose');
 const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 const Listing = require('../models/Listing');
 const blockchainService = require('../services/blockchain');
 const { asyncHandler, successResponse, errorResponse } = require('../utils/helpers');
 const logger = require('../utils/logger');
+
+/**
+ * Helper function to transform transactions for frontend compatibility
+ * Uses listing data if available, falls back to transaction data
+ */
+const transformTransaction = (tx) => {
+    return {
+        ...tx,
+        listing: tx.listing ? {
+            ...tx.listing,
+            energyAmount: tx.listing.amountInTokens,
+            pricePerUnit: tx.listing.pricePerTokenInETH,
+            location: tx.listing.location?.country || tx.listing.location?.city || 'Unknown'
+        } : {
+            // Fallback to transaction data if listing not populated
+            energyAmount: tx.amount || 0,
+            pricePerUnit: tx.pricePerToken || 0,
+            location: 'Unknown',
+            title: `Transaction #${tx.transactionHash?.substring(0, 8)}...`
+        }
+    };
+};
 
 /**
  * @desc    Get all transactions with filters and pagination
@@ -43,7 +66,7 @@ exports.getTransactions = asyncHandler(async (req, res) => {
         Transaction.find(query)
             .populate('fromUser', 'username walletAddress avatar')
             .populate('toUser', 'username walletAddress avatar')
-            .populate('listing', 'title amountInTokens')
+            .populate('listing', 'title amountInTokens pricePerTokenInETH totalPriceInETH location energySource')
             .sort({ [sortBy]: sortOrder })
             .skip(skip)
             .limit(parseInt(limit))
@@ -51,8 +74,11 @@ exports.getTransactions = asyncHandler(async (req, res) => {
         Transaction.countDocuments(query)
     ]);
 
+    // Transform transactions to match frontend expectations
+    const transformedTransactions = transactions.map(transformTransaction);
+
     res.json(successResponse('Transactions retrieved successfully', {
-        transactions,
+        transactions: transformedTransactions,
         pagination: {
             page: parseInt(page),
             limit: parseInt(limit),
@@ -113,7 +139,7 @@ exports.getUserTransactions = asyncHandler(async (req, res) => {
         Transaction.find(query)
             .populate('fromUser', 'username walletAddress')
             .populate('toUser', 'username walletAddress')
-            .populate('listing', 'title amountInTokens')
+            .populate('listing', 'title amountInTokens pricePerTokenInETH totalPriceInETH location energySource')
             .sort({ blockTimestamp: -1 })
             .skip(skip)
             .limit(parseInt(limit))
@@ -121,8 +147,11 @@ exports.getUserTransactions = asyncHandler(async (req, res) => {
         Transaction.countDocuments(query)
     ]);
 
+    // Transform transactions to match frontend expectations
+    const transformedTransactions = transactions.map(transformTransaction);
+
     res.json(successResponse('User transactions retrieved successfully', {
-        transactions,
+        transactions: transformedTransactions,
         pagination: {
             page: parseInt(page),
             limit: parseInt(limit),
@@ -157,7 +186,7 @@ exports.getTransactionsByWallet = asyncHandler(async (req, res) => {
         Transaction.find(query)
             .populate('fromUser', 'username walletAddress')
             .populate('toUser', 'username walletAddress')
-            .populate('listing', 'title amountInTokens')
+            .populate('listing', 'title amountInTokens pricePerTokenInETH totalPriceInETH location energySource')
             .sort({ blockTimestamp: -1 })
             .skip(skip)
             .limit(parseInt(limit))
@@ -165,9 +194,12 @@ exports.getTransactionsByWallet = asyncHandler(async (req, res) => {
         Transaction.countDocuments(query)
     ]);
 
+    // Transform transactions to match frontend expectations
+    const transformedTransactions = transactions.map(transformTransaction);
+
     res.json(successResponse('Wallet transactions retrieved successfully', {
         walletAddress: address,
-        transactions,
+        transactions: transformedTransactions,
         pagination: {
             page: parseInt(page),
             limit: parseInt(limit),
@@ -193,12 +225,16 @@ exports.getListingTransactions = asyncHandler(async (req, res) => {
     const transactions = await Transaction.find({ listing: listingId })
         .populate('fromUser', 'username walletAddress')
         .populate('toUser', 'username walletAddress')
+        .populate('listing', 'title amountInTokens pricePerTokenInETH totalPriceInETH location energySource')
         .sort({ blockTimestamp: -1 })
         .lean();
 
+    // Transform transactions to match frontend expectations
+    const transformedTransactions = transactions.map(transformTransaction);
+
     res.json(successResponse('Listing transactions retrieved successfully', {
         listingId,
-        transactions
+        transactions: transformedTransactions
     }));
 });
 
@@ -288,8 +324,84 @@ exports.createTransaction = asyncHandler(async (req, res) => {
  * @access  Public
  */
 exports.getTransactionStats = asyncHandler(async (req, res) => {
-    const stats = await Transaction.getStatistics();
+    // If user is authenticated, get user-specific stats
+    if (req.user) {
+        const userId = req.user.id;
+        const walletAddress = req.user.walletAddress.toLowerCase();
 
+        const stats = await Transaction.aggregate([
+            {
+                $match: {
+                    $or: [
+                        { fromUser: mongoose.Types.ObjectId(userId) },
+                        { toUser: mongoose.Types.ObjectId(userId) },
+                        { from: walletAddress },
+                        { to: walletAddress }
+                    ],
+                    status: 'confirmed'
+                }
+            },
+            {
+                $facet: {
+                    overall: [
+                        {
+                            $group: {
+                                _id: null,
+                                totalTransactions: { $sum: 1 },
+                                totalVolume: { $sum: '$amount' }
+                            }
+                        }
+                    ],
+                    spent: [
+                        {
+                            $match: {
+                                $or: [
+                                    { fromUser: mongoose.Types.ObjectId(userId) },
+                                    { from: walletAddress }
+                                ],
+                                type: 'energy_purchased'
+                            }
+                        },
+                        {
+                            $group: {
+                                _id: null,
+                                totalSpent: { $sum: '$amountInETH' }
+                            }
+                        }
+                    ],
+                    earned: [
+                        {
+                            $match: {
+                                $or: [
+                                    { toUser: mongoose.Types.ObjectId(userId) },
+                                    { to: walletAddress }
+                                ],
+                                type: 'energy_purchased'
+                            }
+                        },
+                        {
+                            $group: {
+                                _id: null,
+                                totalEarned: { $sum: '$amountInETH' }
+                            }
+                        }
+                    ]
+                }
+            }
+        ]);
+
+        const result = {
+            totalTransactions: stats[0]?.overall[0]?.totalTransactions || 0,
+            totalVolume: stats[0]?.overall[0]?.totalVolume || 0,
+            totalSpent: stats[0]?.spent[0]?.totalSpent || 0,
+            totalEarned: stats[0]?.earned[0]?.totalEarned || 0
+        };
+
+        return res.json(successResponse('User transaction statistics retrieved successfully', result));
+    }
+
+    // Otherwise get platform-wide stats
+    const stats = await Transaction.getStatistics();
     res.json(successResponse('Transaction statistics retrieved successfully', { stats }));
 });
 
@@ -378,12 +490,15 @@ exports.getRecentTransactions = asyncHandler(async (req, res) => {
     const transactions = await Transaction.find(query)
         .populate('fromUser', 'username walletAddress avatar')
         .populate('toUser', 'username walletAddress avatar')
-        .populate('listing', 'title amountInTokens')
+        .populate('listing', 'title amountInTokens pricePerTokenInETH totalPriceInETH location energySource')
         .sort({ blockTimestamp: -1 })
         .limit(parseInt(limit))
         .lean();
 
-    res.json(successResponse('Recent transactions retrieved successfully', { transactions }));
+    // Transform transactions to match frontend expectations
+    const transformedTransactions = transactions.map(transformTransaction);
+
+    res.json(successResponse('Recent transactions retrieved successfully', { transactions: transformedTransactions }));
 });
 
 /**

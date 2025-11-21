@@ -461,13 +461,14 @@ exports.getListingsByEnergySource = asyncHandler(async (req, res) => {
  * @access  Private
  */
 exports.completePurchase = asyncHandler(async (req, res) => {
-    const { transactionHash } = req.body;
+    const { transactionHash, blockNumber, gasUsed, gasPrice } = req.body;
 
     if (!transactionHash) {
         return res.status(400).json(errorResponse('Transaction hash is required'));
     }
 
-    const listing = await Listing.findById(req.params.id);
+    const listing = await Listing.findById(req.params.id)
+        .populate('seller', 'walletAddress');
 
     if (!listing) {
         return res.status(404).json(errorResponse('Listing not found'));
@@ -478,12 +479,76 @@ exports.completePurchase = asyncHandler(async (req, res) => {
     }
 
     // Prevent buying own listing
-    if (listing.seller.toString() === req.user.id) {
+    if (listing.seller._id.toString() === req.user.id) {
         return res.status(400).json(errorResponse('Cannot buy your own listing'));
+    }
+
+    // Check if transaction already exists
+    const existingTransaction = await Transaction.findOne({ transactionHash });
+
+    if (!existingTransaction) {
+        // Get transaction receipt from blockchain if details not provided
+        let txDetails = { blockNumber, gasUsed, gasPrice };
+
+        if (!blockNumber || !gasUsed) {
+            try {
+                const receipt = await blockchainService.getTransactionReceipt(transactionHash);
+                if (receipt) {
+                    txDetails.blockNumber = receipt.blockNumber;
+                    txDetails.gasUsed = receipt.gasUsed;
+                    txDetails.status = receipt.status;
+                }
+            } catch (error) {
+                logger.warn('Failed to fetch transaction receipt:', error.message);
+            }
+        }
+
+        // Calculate platform fee (2% of total price)
+        const platformFeeRate = 0.02;
+        const platformFee = listing.totalPriceInETH * platformFeeRate;
+        const transactionFee = txDetails.gasUsed && txDetails.gasPrice
+            ? (BigInt(txDetails.gasUsed) * BigInt(txDetails.gasPrice)).toString()
+            : '0';
+
+        // Create transaction record
+        await Transaction.create({
+            transactionHash,
+            blockNumber: txDetails.blockNumber || 0,
+            blockTimestamp: new Date(),
+            type: 'energy_purchased',
+            from: req.user.walletAddress.toLowerCase(),
+            to: listing.seller.walletAddress.toLowerCase(),
+            fromUser: req.user.id,
+            toUser: listing.seller._id,
+            amount: listing.amountInTokens,
+            amountInETH: listing.totalPriceInETH,
+            pricePerToken: listing.pricePerTokenInETH,
+            platformFee,
+            gasUsed: txDetails.gasUsed?.toString() || '0',
+            gasPrice: txDetails.gasPrice?.toString() || '0',
+            transactionFee,
+            status: txDetails.status || 'confirmed',
+            listing: listing._id,
+            listingId: listing.listingId?.toString(),
+            contractAddress: process.env.ENERGY_MARKETPLACE_ADDRESS?.toLowerCase(),
+            methodName: 'purchaseEnergy'
+        });
+
+        logger.info(`Transaction record created for purchase: ${transactionHash}`);
     }
 
     // Mark as sold
     await listing.markAsSold(req.user.id, req.user.walletAddress, transactionHash);
+
+    // Update user stats
+    await Promise.all([
+        User.findByIdAndUpdate(req.user.id, {
+            $inc: { 'stats.totalEnergyPurchased': listing.amountInTokens }
+        }),
+        User.findByIdAndUpdate(listing.seller._id, {
+            $inc: { 'stats.totalEnergySold': listing.amountInTokens }
+        })
+    ]);
 
     logger.info(`Listing ${listing._id} purchased by user ${req.user.id}, TX: ${transactionHash}`);
 

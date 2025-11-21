@@ -21,6 +21,13 @@ router.get('/', getListings);
 router.get('/trending', getTrendingListings);
 router.get('/energy-source/:source', getListingsByEnergySource);
 router.get('/blockchain/:listingId', getListingByBlockchainId);
+
+// My listings route (must be before /:id to avoid conflicts)
+router.get('/my/all', protect, async (req, res, next) => {
+    req.params.userId = req.user.id;
+    return getUserListings(req, res, next);
+});
+
 router.get('/user/:userId', getUserListings);
 router.get('/:id', getListing);
 router.post('/', protect, createListing);

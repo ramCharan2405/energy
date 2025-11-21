@@ -11,6 +11,11 @@ const blockchainService = require('./services/blockchain');
 const logger = require('./utils/logger');
 const errorHandler = require('./middleware/errorHandler');
 
+// Import models
+const Transaction = require('./models/Transaction');
+const User = require('./models/User');
+const Listing = require('./models/Listing');
+
 // Import routes
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
@@ -24,11 +29,141 @@ const app = express();
 // Connect to database
 connectDB();
 
-// Initialize blockchain service
-blockchainService.initialize().catch((err) => {
-    logger.error('Failed to initialize blockchain service:', err);
-    process.exit(1);
-});
+// Initialize blockchain service and event listeners
+blockchainService.initialize()
+    .then(() => {
+        // Set up blockchain event listeners to auto-create transaction records
+        blockchainService.setupEventListeners({
+            // Handle token minting events
+            onTokensMinted: async (data) => {
+                try {
+                    const user = await User.findOne({ walletAddress: data.to.toLowerCase() });
+
+                    await Transaction.create({
+                        transactionHash: data.transactionHash,
+                        blockNumber: data.blockNumber,
+                        blockTimestamp: new Date(),
+                        type: 'mint',
+                        from: process.env.PLATFORM_WALLET_ADDRESS?.toLowerCase() || '0x0',
+                        to: data.to.toLowerCase(),
+                        fromUser: null,
+                        toUser: user?._id || null,
+                        amount: parseFloat(data.amount),
+                        amountInETH: 0,
+                        status: 'confirmed',
+                        contractAddress: process.env.ENERGY_TOKEN_ADDRESS?.toLowerCase(),
+                        methodName: 'mintForDemo',
+                        metadata: { reason: data.reason }
+                    });
+
+                    logger.info(`Transaction record created for mint: ${data.transactionHash}`);
+                } catch (error) {
+                    logger.error('Error creating transaction record for mint:', error.message);
+                }
+            },
+
+            // Handle listing creation events
+            onListingCreated: async (data) => {
+                try {
+                    const user = await User.findOne({ walletAddress: data.seller.toLowerCase() });
+
+                    await Transaction.create({
+                        transactionHash: data.transactionHash,
+                        blockNumber: data.blockNumber,
+                        blockTimestamp: new Date(),
+                        type: 'listing_created',
+                        from: data.seller.toLowerCase(),
+                        to: process.env.ENERGY_MARKETPLACE_ADDRESS?.toLowerCase() || '0x0',
+                        fromUser: user?._id || null,
+                        toUser: null,
+                        amount: parseFloat(data.amountInTokens),
+                        amountInETH: parseFloat(data.totalPriceInWei),
+                        pricePerToken: parseFloat(data.pricePerTokenInWei),
+                        status: 'confirmed',
+                        listingId: data.listingId,
+                        contractAddress: process.env.ENERGY_MARKETPLACE_ADDRESS?.toLowerCase(),
+                        methodName: 'createListing'
+                    });
+
+                    logger.info(`Transaction record created for listing: ${data.transactionHash}`);
+                } catch (error) {
+                    logger.error('Error creating transaction record for listing:', error.message);
+                }
+            },
+
+            // Handle energy purchase events
+            onEnergyPurchased: async (data) => {
+                try {
+                    const [buyer, seller, listing] = await Promise.all([
+                        User.findOne({ walletAddress: data.buyer.toLowerCase() }),
+                        User.findOne({ walletAddress: data.seller.toLowerCase() }),
+                        Listing.findOne({ listingId: parseInt(data.listingId) })
+                    ]);
+
+                    await Transaction.create({
+                        transactionHash: data.transactionHash,
+                        blockNumber: data.blockNumber,
+                        blockTimestamp: new Date(),
+                        type: 'energy_purchased',
+                        from: data.buyer.toLowerCase(),
+                        to: data.seller.toLowerCase(),
+                        fromUser: buyer?._id || null,
+                        toUser: seller?._id || null,
+                        amount: parseFloat(data.amountInTokens),
+                        amountInETH: parseFloat(data.totalPriceInWei),
+                        platformFee: parseFloat(data.platformFee),
+                        status: 'confirmed',
+                        listing: listing?._id || null,
+                        listingId: data.listingId,
+                        contractAddress: process.env.ENERGY_MARKETPLACE_ADDRESS?.toLowerCase(),
+                        methodName: 'purchaseEnergy'
+                    });
+
+                    logger.info(`Transaction record created for purchase: ${data.transactionHash}`);
+                } catch (error) {
+                    logger.error('Error creating transaction record for purchase:', error.message);
+                }
+            },
+
+            // Handle listing cancellation events
+            onListingCancelled: async (data) => {
+                try {
+                    const [user, listing] = await Promise.all([
+                        User.findOne({ walletAddress: data.seller.toLowerCase() }),
+                        Listing.findOne({ listingId: parseInt(data.listingId) })
+                    ]);
+
+                    await Transaction.create({
+                        transactionHash: data.transactionHash,
+                        blockNumber: data.blockNumber,
+                        blockTimestamp: new Date(),
+                        type: 'listing_cancelled',
+                        from: data.seller.toLowerCase(),
+                        to: process.env.ENERGY_MARKETPLACE_ADDRESS?.toLowerCase() || '0x0',
+                        fromUser: user?._id || null,
+                        toUser: null,
+                        amount: 0,
+                        amountInETH: 0,
+                        status: 'confirmed',
+                        listing: listing?._id || null,
+                        listingId: data.listingId,
+                        contractAddress: process.env.ENERGY_MARKETPLACE_ADDRESS?.toLowerCase(),
+                        methodName: 'cancelListing'
+                    });
+
+                    logger.info(`Transaction record created for cancellation: ${data.transactionHash}`);
+                } catch (error) {
+                    logger.error('Error creating transaction record for cancellation:', error.message);
+                }
+            }
+        });
+
+        logger.info('✓ Blockchain event listeners initialized');
+    })
+    .catch((err) => {
+        logger.error('Failed to initialize blockchain service:', err);
+        process.exit(1);
+    });
 
 // Body parser middleware
 app.use(express.json({ limit: '10mb' }));

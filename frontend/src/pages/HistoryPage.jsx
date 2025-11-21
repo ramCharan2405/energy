@@ -49,17 +49,27 @@ const HistoryPage = () => {
         getMyTransactions(),
         getTransactionStats(),
       ]);
-      setTransactions(txResponse.data || []);
+      // Backend returns: { success, message, data: { transactions, pagination } }
+      setTransactions(txResponse.data?.transactions || []);
+      // Stats response returns: { success, message, data: { totalTransactions, totalVolume, ... } } or direct object
       setStats(statsResponse.data || {});
     } catch (error) {
       console.error("Error loading history:", error);
       toast.error("Failed to load transaction history");
+      setTransactions([]); // Set empty array on error
+      setStats({});
     } finally {
       setLoading(false);
     }
   };
 
   const filterAndSortTransactions = () => {
+    // Safety check: ensure transactions is an array
+    if (!Array.isArray(transactions)) {
+      setFilteredTransactions([]);
+      return;
+    }
+
     let filtered = [...transactions];
 
     // Filter by type
@@ -71,7 +81,7 @@ const HistoryPage = () => {
     if (searchQuery) {
       filtered = filtered.filter(
         (tx) =>
-          tx.txHash?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          tx.transactionHash?.toLowerCase().includes(searchQuery.toLowerCase()) ||
           tx.listing?.location
             ?.toLowerCase()
             .includes(searchQuery.toLowerCase())
@@ -112,7 +122,7 @@ const HistoryPage = () => {
           tx.listing?.pricePerUnit || "N/A",
           tx.amount || "N/A",
           tx.status,
-          tx.txHash,
+          tx.transactionHash,
         ]),
       ]
         .map((row) => row.join(","))
@@ -429,15 +439,15 @@ const HistoryPage = () => {
                         <div className="text-gray-400">
                           {formatDate(tx.createdAt)}
                         </div>
-                        {tx.txHash && (
+                        {tx.transactionHash && (
                           <a
-                            href={`https://sepolia.etherscan.io/tx/${tx.txHash}`}
+                            href={`https://sepolia.etherscan.io/tx/${tx.transactionHash}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-neon-cyan hover:text-neon-green transition-colors flex items-center gap-1"
                           >
                             <span className="font-mono">
-                              {formatAddress(tx.txHash)}
+                              {formatAddress(tx.transactionHash)}
                             </span>
                             <FaExternalLinkAlt size={12} />
                           </a>
