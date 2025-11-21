@@ -154,23 +154,48 @@ start_mongodb() {
     if [ "$MONGODB_INSTALLED" = true ]; then
         if ! pgrep -x mongod > /dev/null; then
             echo -e "${YELLOW}Starting MongoDB...${NC}"
-            sudo mkdir -p /data/db
-            sudo mongod --fork --logpath /var/log/mongodb.log --dbpath /data/db 2>/dev/null || {
-                echo -e "${YELLOW}Could not start MongoDB as service, trying alternative...${NC}"
-                mkdir -p /tmp/mongodb-data
-                mongod --dbpath /tmp/mongodb-data --logpath /tmp/mongodb.log --fork 2>/dev/null || {
-                    echo -e "${RED}✗ Failed to start MongoDB${NC}"
-                    echo "Please start MongoDB manually: sudo systemctl start mongod"
-                    return 1
+            
+            # Try to start with systemctl first (most common on Linux)
+            if command -v systemctl &> /dev/null; then
+                sudo systemctl start mongod 2>/dev/null && {
+                    sleep 2
+                    check_status "MongoDB started via systemctl"
+                    return 0
                 }
+            fi
+            
+            # Try homebrew services on macOS
+            if command -v brew &> /dev/null; then
+                brew services start mongodb-community 2>/dev/null && {
+                    sleep 2
+                    check_status "MongoDB started via brew"
+                    return 0
+                }
+            fi
+            
+            # Try user-space MongoDB with persistent data
+            echo -e "${YELLOW}Trying to start MongoDB in user space...${NC}"
+            MONGO_DATA_DIR="$HOME/.mongodb-data"
+            mkdir -p "$MONGO_DATA_DIR"
+            mongod --dbpath "$MONGO_DATA_DIR" --logpath "$MONGO_DATA_DIR/mongodb.log" --fork 2>/dev/null && {
+                sleep 2
+                check_status "MongoDB started (data stored in $MONGO_DATA_DIR)"
+                return 0
             }
-            sleep 2
-            check_status "MongoDB started"
+            
+            # If all else fails
+            echo -e "${RED}✗ Could not start MongoDB automatically${NC}"
+            echo -e "${YELLOW}Please start MongoDB manually:${NC}"
+            echo "  • Linux: sudo systemctl start mongod"
+            echo "  • macOS: brew services start mongodb-community"
+            echo "  • Or use MongoDB Atlas (cloud): https://www.mongodb.com/cloud/atlas"
+            return 1
         else
             check_status "MongoDB already running"
         fi
     else
         echo -e "${YELLOW}⚠ MongoDB not installed - backend may have limited functionality${NC}"
+        echo -e "${YELLOW}Install from: https://www.mongodb.com/try/download/community${NC}"
     fi
 }
 
@@ -238,6 +263,9 @@ case $choice in
             echo -e "${YELLOW}⚠ Port 5173 is already in use (frontend)${NC}"
             exit 1
         fi
+        
+        # Create logs directory if it doesn't exist
+        mkdir -p logs
         
         echo -e "${GREEN}Starting backend server in background...${NC}"
         cd backend && npm run dev > ../logs/backend.log 2>&1 &
