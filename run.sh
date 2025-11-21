@@ -157,6 +157,7 @@ start_mongodb() {
             
             # Try to start with systemctl first (most common on Linux)
             if command -v systemctl &> /dev/null; then
+                echo -e "${YELLOW}Attempting to start MongoDB via systemctl (may require sudo)...${NC}"
                 sudo systemctl start mongod 2>/dev/null && {
                     sleep 2
                     check_status "MongoDB started via systemctl"
@@ -177,9 +178,10 @@ start_mongodb() {
             echo -e "${YELLOW}Trying to start MongoDB in user space...${NC}"
             MONGO_DATA_DIR="$HOME/.mongodb-data"
             mkdir -p "$MONGO_DATA_DIR"
-            mongod --dbpath "$MONGO_DATA_DIR" --logpath "$MONGO_DATA_DIR/mongodb.log" --fork 2>/dev/null && {
+            mongod --dbpath "$MONGO_DATA_DIR" --logpath "$MONGO_DATA_DIR/mongodb.log" --bind_ip localhost --fork 2>/dev/null && {
                 sleep 2
                 check_status "MongoDB started (data stored in $MONGO_DATA_DIR)"
+                echo -e "${CYAN}Note: MongoDB is running on localhost only for security${NC}"
                 return 0
             }
             
@@ -264,11 +266,14 @@ case $choice in
             exit 1
         fi
         
-        # Create logs directory if it doesn't exist
-        mkdir -p logs
+        # Get absolute path to project root
+        PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        
+        # Create logs directory if it doesn't exist (using absolute path)
+        mkdir -p "$PROJECT_ROOT/logs"
         
         echo -e "${GREEN}Starting backend server in background...${NC}"
-        cd backend && npm run dev > ../logs/backend.log 2>&1 &
+        cd "$PROJECT_ROOT/backend" && npm run dev > "$PROJECT_ROOT/logs/backend.log" 2>&1 &
         BACKEND_PID=$!
         echo "Backend PID: $BACKEND_PID"
         
