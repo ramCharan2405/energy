@@ -152,12 +152,13 @@ print_header "Step 3: Starting Services"
 # Function to start MongoDB if not running
 start_mongodb() {
     if [ "$MONGODB_INSTALLED" = true ]; then
-        if ! pgrep -x mongod > /dev/null; then
+        if ! pgrep mongod > /dev/null; then
             echo -e "${YELLOW}Starting MongoDB...${NC}"
             
             # Try to start with systemctl first (most common on Linux)
             if command -v systemctl &> /dev/null; then
-                echo -e "${YELLOW}Attempting to start MongoDB via systemctl (may require sudo)...${NC}"
+                echo -e "${YELLOW}⚠️  About to run: sudo systemctl start mongod${NC}"
+                echo -e "${YELLOW}This will prompt for your password to start MongoDB as a system service${NC}"
                 sudo systemctl start mongod 2>/dev/null && {
                     sleep 2
                     check_status "MongoDB started via systemctl"

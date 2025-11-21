@@ -35,14 +35,31 @@ PROJECT_ROOT="$SCRIPT_DIR"
 # Create logs directory
 mkdir -p "$PROJECT_ROOT/logs"
 
-# Check if ports are available
+# Check if ports are available (with fallback for systems without lsof)
 check_port() {
     local port=$1
-    if lsof -Pi :$port -sTCP:LISTEN -t >/dev/null 2>&1 ; then
-        return 0
-    else
-        return 1
+    
+    # Try lsof first (most reliable)
+    if command -v lsof &> /dev/null; then
+        if lsof -Pi :$port -sTCP:LISTEN -t >/dev/null 2>&1 ; then
+            return 0
+        else
+            return 1
+        fi
     fi
+    
+    # Fallback to netstat if available
+    if command -v netstat &> /dev/null; then
+        if netstat -tuln 2>/dev/null | grep -q ":$port "; then
+            return 0
+        else
+            return 1
+        fi
+    fi
+    
+    # If neither command is available, assume port is free
+    echo -e "${YELLOW}⚠ Cannot check port $port (lsof and netstat not found)${NC}"
+    return 1
 }
 
 if check_port 5000; then
@@ -93,12 +110,19 @@ echo ""
 echo -e "${YELLOW}Press Ctrl+C to stop both services${NC}"
 echo ""
 
-# Trap to kill backend on exit
-trap "echo 'Stopping backend...'; kill $BACKEND_PID 2>/dev/null; exit" INT TERM
+# Cleanup function
+cleanup() {
+    echo ""
+    echo 'Stopping services...'
+    if ps -p $BACKEND_PID > /dev/null 2>&1; then
+        kill $BACKEND_PID 2>/dev/null
+        echo "Backend stopped."
+    fi
+}
+
+# Trap to kill backend on exit (handles all exit scenarios)
+trap cleanup INT TERM EXIT
 
 # Start frontend (foreground)
 npm run dev
-
-# Cleanup
-kill $BACKEND_PID 2>/dev/null
 
