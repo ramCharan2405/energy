@@ -28,6 +28,7 @@ build/
 # Cache
 .cache/
 
-# Documentation (exclude all .md except README.md)
+# Documentation (exclude all .md except important ones)
 *.md
 !README.md
+!QUICKSTART.md
